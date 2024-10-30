@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://purl.org/dc/elements/1.1/"
+           xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning"
+           vc:minVersion="1.1"
+           xmlns:dc="http://purl.org/dc/elements/1.1/"
+           xmlns:dcterms="http://purl.org/dc/terms/"
+           xmlns:rosetta="http://www.exlibrisgroup.com/dps">
+
+  <xsd:import namespace="http://purl.org/dc/terms/" schemaLocation="dcterms.xsd"/>
+  <xsd:import namespace="http://www.exlibrisgroup.com/dps" schemaLocation="rosetta.xsd"/>
+
+  <xsd:element name="record">
+    <xsd:complexType>
+      <xsd:all>
+        <xsd:element name="title" type="xsd:string" form="qualified" minOccurs="1" maxOccurs="unbounded"/>
+        <xsd:element ref="dcterms:identifier" minOccurs="0" maxOccurs="unbounded"/>
+        <xsd:element ref="rosetta:externalSystem" minOccurs="1" maxOccurs="1"/>
+        <xsd:element ref="rosetta:externalId" minOccurs="1" maxOccurs="1"/>
+      </xsd:all>
+    </xsd:complexType>
+  </xsd:element>
+</xsd:schema>

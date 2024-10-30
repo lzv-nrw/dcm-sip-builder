@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://www.exlibrisgroup.com/dps">
+  <xsd:element name="externalSystem" type="xsd:string"/>
+  <xsd:element name="externalId" type="xsd:string"/>
+</xsd:schema>
