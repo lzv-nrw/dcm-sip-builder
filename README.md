@@ -1,21 +1,25 @@
-# dcm-sip-builder
+# Digital Curation Manager - SIP Builder
 
-The 'DCM SIP Builder'-service provides functionality to convert Information Packages (IPs) into Submission Information Packages (SIPs).
+The 'DCM SIP Builder'-API provides functionality to convert Information Packages (IPs) into Submission Information Packages (SIPs).
+This repository contains the corresponding Flask app definition.
+For the associated OpenAPI-document, please refer to the sibling package [`dcm-sip-builder-api`](https://github.com/lzv-nrw/dcm-sip-builder-api).
 
-## Run locally
-Running in a `venv` is recommended.
+The contents of this repository are part of the [`Digital Curation Manager`](https://github.com/lzv-nrw/digital-curation-manager).
 
-To test the app locally,
-1. install with
+## Local install
+Make sure to include the extra-index-url `https://zivgitlab.uni-muenster.de/api/v4/projects/9020/packages/pypi/simple` in your [pip-configuration](https://pip.pypa.io/en/stable/cli/pip_install/#finding-packages) to enable an automated install of all dependencies.
+Using a virtual environment is recommended.
+
+1. Install with
    ```
    pip install .
    ```
-1. Configure service environment to your needs ([see here](#environmentconfiguration)).
-1. run as
+1. Configure service environment to fit your needs ([see here](#environmentconfiguration)).
+1. Run app as
    ```
    flask run --port=8080
    ```
-1. use either commandline tools like `curl`,
+1. To manually use the API, either run command line tools like `curl` as, e.g.,
    ```
    curl -X 'POST' \
      'http://localhost:8080/build' \
@@ -24,60 +28,37 @@ To test the app locally,
      -d '{
      "build": {
        "target": {
-         "path": "file_storage/test_ip"
+         "path": "jobs/abcde-12345-fghijk-67890"
        }
      }
    }'
    ```
-   or a gui like [swagger-ui](https://github.com/lzv-nrw/dcm-sip-builder-api/-/blob/dev/dcm_sip_builder_api/openapi.yaml?ref_type=heads) (see sibling package [`dcm-sip-builder-api`](https://github.com/lzv-nrw/dcm-sip-builder-api)) to submit jobs
+   or run a gui-application, like Swagger UI, based on the OpenAPI-document provided in the sibling package [`dcm-sip-builder-api`](https://github.com/lzv-nrw/dcm-sip-builder-api).
 
-A sample IP that can be converted to a SIP can be found in `test_dcm_sip_builder/fixtures`.
-
-## Run with Docker
-### Container setup
-Use the `compose.yml` to start the `DCM SIP Builder`-container as a service:
+## Run with docker compose
+Simply run
 ```
 docker compose up
 ```
-(to rebuild run `docker compose build`).
+By default, the app listens on port 8080.
+The docker volume `file_storage` is automatically created and data will be written in `/file_storage`.
+To rebuild an already existing image, run `docker compose build`.
 
-A Swagger UI is hosted at
+Additionally, a Swagger UI is hosted at
 ```
 http://localhost/docs
 ```
-while (by-default) the app listens to port `8080`.
 
-Afterwards, stop the process for example with `Ctrl`+`C` and enter `docker compose down`.
-
-The build process requires authentication with `zivgitlab.uni-muenster.de` in order to gain access to the required python dependencies.
-The Dockerfiles are setup to use the information from `~/.netrc` for this authentication (a gitlab api-token is required).
-
-### File system setup
-The currently used docker volume is set up automatically on `docker compose up`. However, in order to move data from the local file system into the container, the container also needs to mount this local file system (along with the volume). To this end, the `compose.yml` needs to be modified before startup with
-```
-    ...
-      - file_storage:/file_storage
-      - type: bind
-        source: ./test_dcm_sip_builder/fixtures
-        target: /local
-    ports:
-      ...
-```
-By then opening an interactive session in the container (i.e., after running the compose-script) with
-```
-docker exec -it <container-id> sh
-```
-the example IP from the test-related fixtures-directory can be copied over to the volume:
-```
-cp -r /local/* /file_storage/
-```
-(The modification to the file `compose.yml` can be reverted after copying.)
+Afterwards, stop the process and enter `docker compose down`.
 
 ## Tests
-Install additional dependencies from `dev-requirements.txt`.
+Install additional dev-dependencies with
+```
+pip install -r dev-requirements.txt
+```
 Run unit-tests with
 ```
-pytest -v -s --cov dcm_sip_builder
+pytest -v -s
 ```
 
 ## Environment/Configuration
@@ -107,7 +88,7 @@ Additionally this service provides environment options for
 * `OrchestratedAppConfig`, and
 * `FSConfig`
 
-as listed [here](https://github.com/lzv-nrw/dcm-common/-/tree/dev?ref_type=heads#app-configuration).
+as listed [here](https://github.com/lzv-nrw/dcm-common#app-configuration).
 
 # Contributors
 * Sven Haubold
@@ -117,3 +98,4 @@ as listed [here](https://github.com/lzv-nrw/dcm-common/-/tree/dev?ref_type=heads
 * Michael Rahier
 * Steffen Richters-Finger
 * Malte Windrath
+* Roman Kudinov
