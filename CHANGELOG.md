@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.1.0] - 2025-07-25
+
+### Changed
+
+- moved xml-validator to the `dcm-common` project and imported from there
+
+### Added
+
+- added support for `significant_properties.xml`
+
+### Fixed
+
+- fixed initialization of ScalableOrchestrator with ORCHESTRATION_PROCESSES
+
 ## [2.0.1] - 2024-11-21
 
 ### Changed

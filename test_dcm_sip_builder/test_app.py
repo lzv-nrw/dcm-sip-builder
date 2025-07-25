@@ -37,3 +37,11 @@ def test_iexml_disable_validation(testing_config):
         "http://lzv.nrw/rosetta_mets.xsd"
     testing_config.VALIDATION_ROSETTA_METS_ACTIVE = False
     app_factory(testing_config())
+
+
+def test_dcxml_error_on_missing_xsd(testing_config):
+    """Test whether a missing XML schema causes `RuntimeError`."""
+    testing_config.VALIDATION_DCXML_XSD = \
+        "http://lzv.nrw/dc.xsd"
+    with pytest.raises(RuntimeError):
+        app_factory(testing_config())

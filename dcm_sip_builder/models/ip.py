@@ -14,6 +14,8 @@ PATH_BAGINFO = "bag-info.txt"
 PATH_MANIFESTS = "manifest"
 PATH_PAYLOAD = "data"
 PATH_DC_XML = "meta/dc.xml"
+SIGPROP_PREMIS_NAMESPACE = "{http://www.loc.gov/premis/v3}"
+PATH_SIGNIFICANT_PROPERTIES_XML = "meta/significant_properties.xml"
 PATH_EVENTS = "meta/events.xml"
 PATH_SOURCE_METADATA = "meta/source_metadata.xml"
 
@@ -47,11 +49,14 @@ class IP:
         )
 
         # the xml files are optional
+        self.source_metadata = self._load_xml(
+            self.path / PATH_SOURCE_METADATA
+        )
         self.dc_xml = self._load_xml(
             self.path / PATH_DC_XML
         )
-        self.source_metadata = self._load_xml(
-            self.path / PATH_SOURCE_METADATA
+        self.significant_properties = self._load_significant_properties(
+            self._load_xml(self.path / PATH_SIGNIFICANT_PROPERTIES_XML)
         )
         self.events = self._load_xml(
             self.path / PATH_EVENTS
@@ -216,3 +221,36 @@ class IP:
                     })
                 payload_files[d] = payload_files_rep
         return payload_files
+
+    def _load_significant_properties(
+        self, tree: Optional[et._ElementTree]
+    ) -> Optional[dict]:
+        """
+        Returns 'significant_properties.xml'-metadata as dictionary or
+        None if not existing.
+        """
+        # check if exists
+        if tree is None:
+            return None
+
+        # parse
+        try:
+            significant_properties = tree.find(
+                f"{SIGPROP_PREMIS_NAMESPACE}object"
+            ).findall(
+                f"{SIGPROP_PREMIS_NAMESPACE}significantProperties"
+            )
+        except AttributeError:
+            return {}
+        result = {}
+        for p in significant_properties:
+            type_ = p.find(
+                f"{SIGPROP_PREMIS_NAMESPACE}significantPropertiesType"
+            )
+            value = p.find(
+                f"{SIGPROP_PREMIS_NAMESPACE}significantPropertiesValue"
+            )
+            if type_ is None or value is None:
+                continue
+            result[type_.text] = value.text
+        return result

@@ -177,13 +177,20 @@ def test_IP_constructor(file_storage):
                 assert Path("data/" + version + "/" + representation) in \
                     Path(file).parents
 
+    assert hasattr(ip, "source_metadata")
+    assert isinstance(ip.source_metadata, et._ElementTree)
+    assert len(et.tostring(ip.source_metadata, encoding='utf8')) == 903
+
     assert hasattr(ip, "dc_xml")
     assert isinstance(ip.dc_xml, et._ElementTree)
     assert len(et.tostring(ip.dc_xml, encoding='utf8')) == 638
 
-    assert hasattr(ip, "source_metadata")
-    assert isinstance(ip.source_metadata, et._ElementTree)
-    assert len(et.tostring(ip.source_metadata, encoding='utf8')) == 903
+    assert hasattr(ip, "significant_properties")
+    assert isinstance(ip.significant_properties, dict)
+    assert all(
+        t in ip.significant_properties
+        for t in ["content", "context", "appearance", "behavior", "structure"]
+    )
 
     assert hasattr(ip, "events")
     assert ip.events is None
@@ -192,37 +199,43 @@ def test_IP_constructor(file_storage):
 @pytest.mark.parametrize(
     ("deleted_files", "ip_complete", "log_message"),
     [
-        (
+        (  # bag_info
             ["bag-info.txt"],
             False,
             "Unable to load file"
-        ),  # bag_info
-        (
+        ),
+        (  # manifests
             ["manifest-md5.txt", "manifest-sha256.txt", "manifest-sha512.txt"],
             False,
             "No file with prefix 'manifest' found."
-        ),  # manifests
-        (
-            ["meta/dc.xml"],
-            True,
-            "No file 'meta/dc.xml' found."
-        ),  # dc
-        (
+        ),
+        (  # source_metadata
             ["meta/source_metadata.xml"],
             True,
             "No file 'meta/source_metadata.xml' found."
-        ),  # source_metadata
-        (
+        ),
+        (  # dc
+            ["meta/dc.xml"],
+            True,
+            "No file 'meta/dc.xml' found."
+        ),
+        (  # significant_properties
+            ["meta/significant_properties.xml"],
+            True,
+            "No file 'meta/significant_properties.xml' found."
+        ),
+        (  # events
             ["meta/events.xml"],
             True,
             "No file 'meta/events.xml' found."
-        ),  # events
+        ),
     ],
     ids=[
         "bag_info",
         "manifests",
-        "dc",
         "source_metadata",
+        "significant_properties",
+        "dc",
         "events"
     ]
 )

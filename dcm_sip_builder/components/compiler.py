@@ -420,7 +420,11 @@ class IECompiler(MetadataCompiler):
 
         # add sections individually
         ie_xml.append(self.compile_dmdsec(ip.baginfo, ip.dc_xml))
-        ie_xml.append(self.compile_ie_amdsec(ip.baginfo, ip.source_metadata))
+        ie_xml.append(
+            self.compile_ie_amdsec(
+                ip.baginfo, ip.source_metadata, ip.significant_properties
+            )
+        )
 
         representations = self._generate_representation_info(
             ip.payload_files, ip.manifests or {}
@@ -512,7 +516,8 @@ class IECompiler(MetadataCompiler):
     def compile_ie_amdsec(
         self,
         baginfo: dict,
-        source_metadata: Optional[et._ElementTree]
+        source_metadata: Optional[et._ElementTree],
+        significant_properties: Optional[dict],
     ) -> et._Element:
         """
         Returns 'ie-amd'-amdSec element.
@@ -521,12 +526,16 @@ class IECompiler(MetadataCompiler):
         baginfo -- metadata given in the `IP`'s 'bag-info.txt'-file
         source_metadata -- xml tree of source metadata collected from
                            `IP`
+        significant_properties -- contents of metadata-file
+                                  `significant_properties.xml`
         """
         # create base
         amdsec = et.Element(XMLNS.mets + "amdSec", ID="ie-amd")
 
         # generate and append children
-        amdsec.append(self.compile_ie_amdsec_techmd(baginfo))
+        amdsec.append(
+            self.compile_ie_amdsec_techmd(baginfo, significant_properties)
+        )
         amdsec.append(self.compile_ie_amdsec_rightsmd())
         if source_metadata is not None:
             amdsec.append(self.compile_ie_amdsec_sourcemd(source_metadata))
@@ -535,13 +544,16 @@ class IECompiler(MetadataCompiler):
 
     def compile_ie_amdsec_techmd(
         self,
-        baginfo: dict
+        baginfo: dict,
+        significant_properties: Optional[dict],
     ) -> et._Element:
         """
         Returns 'techMD'-section of 'ie-amd'-amdSec element.
 
         Keyword arguments:
         baginfo -- metadata given in the `IP`'s 'bag-info.txt'-file
+        significant_properties -- contents of metadata-file
+                                  `significant_properties.xml`
         """
         # create inner child
         dnx = et.Element("dnx", nsmap={None: XMLNS.dnx.identifier})
@@ -557,6 +569,23 @@ class IECompiler(MetadataCompiler):
                 "key",
                 id="preservationLevelType"
             ).text = baginfo["Preservation-Level"]
+
+        if significant_properties is not None:
+            significantproperties = et.SubElement(
+                dnx, "section", id="significantProperties"
+            )
+            for type_, value in significant_properties.items():
+                record = et.SubElement(significantproperties, "record")
+                et.SubElement(
+                    record,
+                    "key",
+                    id="significantPropertiesType"
+                ).text = type_
+                et.SubElement(
+                    record,
+                    "key",
+                    id="significantPropertiesValue"
+                ).text = value
 
         # assemble
         techmd = et.Element(XMLNS.mets + "techMD", ID="ie-amd-tech")

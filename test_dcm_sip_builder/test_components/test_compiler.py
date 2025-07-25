@@ -238,8 +238,9 @@ def test_ie_compiler_compile(ie_compiler):
     """Test method `compile` of `IECompiler` by faking components."""
     class _IP:
         baginfo = {"not": "empty"}
-        dc_xml = None
         source_metadata = None
+        dc_xml = None
+        significant_properties = None
         payload_files = {}
         manifests = {}
     with patch(
@@ -375,13 +376,22 @@ def test_ie_compiler_compile_dmdsec_missing_baginfo(ie_compiler):
 
 
 @pytest.mark.parametrize(
+    "significant_properties",
+    [
+        None, "not-None"
+    ],
+    ids=["missing_significant_properties", "present_significant_properties"]
+)
+@pytest.mark.parametrize(
     "sourceMD",
     [
         None, "not-None"
     ],
     ids=["missing_sourceMD", "present_sourceMD"]
 )
-def test_ie_compiler_compile_ie_amdsec(ie_compiler, sourceMD):
+def test_ie_compiler_compile_ie_amdsec(
+    ie_compiler, sourceMD, significant_properties
+):
     """Test method `compile_ie_amdsec` of `IECompiler` by faking components."""
     with patch(
         "dcm_sip_builder.components.compiler.IECompiler.compile_ie_amdsec_techmd",
@@ -396,7 +406,9 @@ def test_ie_compiler_compile_ie_amdsec(ie_compiler, sourceMD):
         "dcm_sip_builder.components.compiler.IECompiler.compile_ie_amdsec_digiprovmd",
         return_value=et.Element("digiprovmd")
     ):
-        xml = ie_compiler.compile_ie_amdsec({}, sourceMD)
+        xml = ie_compiler.compile_ie_amdsec(
+            {}, sourceMD, significant_properties
+        )
         assert xml.tag == XMLNS.mets + "amdSec"
         assert xml.attrib == {  # amdSec
             "ID": "ie-amd"
@@ -411,6 +423,33 @@ def test_ie_compiler_compile_ie_amdsec(ie_compiler, sourceMD):
             }
 
 
+def test_ie_compiler_compile_ie_amdsec_techmd(ie_compiler):
+    """
+    Test method `compile_ie_amdsec_techmd` of `IECompiler`.
+    """
+    xml = ie_compiler.compile_ie_amdsec_techmd({}, None)
+    assert xml.tag == XMLNS.mets + "techMD"
+    assert xml.attrib == {  # techMD
+        "ID": "ie-amd-tech"
+    }
+    assert xml[0].attrib == {  # mdWrap
+        "MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"
+    }
+    assert (
+        len(
+            get_child_from_path(
+                xml,
+                [
+                    XMLNS.mets + "mdWrap",
+                    XMLNS.mets + "xmlData",
+                    "dnx",
+                ],
+            )
+        )
+        == 1
+    )
+
+
 @pytest.mark.parametrize(
     "baginfo",
     [
@@ -419,28 +458,95 @@ def test_ie_compiler_compile_ie_amdsec(ie_compiler, sourceMD):
     ],
     ids=["no-preservation-level", "preservation-level"]
 )
-def test_ie_compiler_compile_ie_amdsec_techmd(ie_compiler, baginfo):
+def test_ie_compiler_compile_ie_amdsec_techmd_preservation_level(
+    ie_compiler, baginfo
+):
     """
     Test method `compile_ie_amdsec_techmd` of `IECompiler`.
     """
-    xml = ie_compiler.compile_ie_amdsec_techmd(baginfo)
-    assert xml.tag == XMLNS.mets + "techMD"
-    assert xml.attrib == {  # techMD
-        "ID": "ie-amd-tech"
-    }
-    assert xml[0].attrib == {  # mdWrap
-        "MDTYPE": "OTHER", "OTHERMDTYPE": "dnx"
-    }
+    xml = ie_compiler.compile_ie_amdsec_techmd(baginfo, None)
     keys = get_child_from_path(
-        xml, [
-            XMLNS.mets + "mdWrap", XMLNS.mets + "xmlData", "dnx", "section",
-            "record", "key"
-        ]
+        xml,
+        [
+            XMLNS.mets + "mdWrap",
+            XMLNS.mets + "xmlData",
+            "dnx",
+            "section",
+            "record",
+            "key",
+        ],
     )
-    assert len(keys) == len(baginfo)
+    assert len(keys) == (1 if baginfo else 0)
     if len(baginfo) > 0:
         assert keys[0].attrib == {"id": "preservationLevelType"}
         assert keys[0].text == baginfo.get("Preservation-Level")
+
+
+@pytest.mark.parametrize(
+    "significant_properties",
+    [
+        None,
+        {"content": "a", "context": "b"},
+    ],
+    ids=["no-significant-properties", "significant-properties"]
+)
+def test_ie_compiler_compile_ie_amdsec_techmd_significant_properties(
+    ie_compiler, significant_properties
+):
+    """
+    Test method `compile_ie_amdsec_techmd` of `IECompiler`.
+    """
+    xml = ie_compiler.compile_ie_amdsec_techmd({}, significant_properties)
+    keys = get_child_from_path(
+        xml,
+        [
+            XMLNS.mets + "mdWrap",
+            XMLNS.mets + "xmlData",
+            "dnx",
+            "section",
+            "record",
+            "key",
+        ],
+    )
+    sections = get_child_from_path(
+        xml,
+        [
+            XMLNS.mets + "mdWrap",
+            XMLNS.mets + "xmlData",
+            "dnx",
+            "section",
+        ],
+    )
+    if significant_properties is None:
+        assert len(sections) == 0
+        return
+    assert len(sections) == 1
+    records = get_child_from_path(sections[0], ["record"])
+    assert len(records) == 2
+    key_texts = []
+    for r in records:
+        keys = get_child_from_path(r, ["key"])
+        # check ids
+        assert keys[0].attrib == {"id": "significantPropertiesType"} or keys[
+            1
+        ].attrib == {"id": "significantPropertiesType"}
+        assert keys[0].attrib == {"id": "significantPropertiesValue"} or keys[
+            1
+        ].attrib == {"id": "significantPropertiesValue"}
+        # check text
+        # * any key has type-text
+        assert (
+            keys[0].text in significant_properties
+            or keys[1].text in significant_properties
+        )
+        # * the other key has value-text
+        if keys[0].text in significant_properties:
+            key_texts.append(keys[0].text)
+            assert keys[1].text == significant_properties[keys[0].text]
+        else:
+            key_texts.append(keys[1].text)
+            assert keys[0].text == significant_properties[keys[1].text]
+    assert len(set(key_texts)) == 2
 
 
 def test_ie_compiler_compile_ie_amdsec_rightsmd(ie_compiler):

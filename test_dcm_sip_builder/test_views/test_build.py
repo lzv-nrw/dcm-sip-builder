@@ -93,8 +93,9 @@ def test_build_error_in_compiler(
             "DC-Title": "title"
         }
         path = Path(minimal_request_body["build"]["target"]["path"])
-        dc_xml = None
         source_metadata = None
+        dc_xml = None
+        significant_properties = None
         payload_files = {}
         manifests = {}
 

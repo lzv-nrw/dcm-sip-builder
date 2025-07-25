@@ -11,12 +11,13 @@ from dcm_common import LoggingContext as Context
 from dcm_common.util import get_output_path
 from dcm_common.orchestration import JobConfig, Job
 from dcm_common import services
+from dcm_common.xml import XMLValidator
 
 from dcm_sip_builder.config import AppConfig
 from dcm_sip_builder.handlers import get_build_handler
 from dcm_sip_builder.models import BuildConfig, IP, SIP
 from dcm_sip_builder.components import (
-    DCCompiler, IECompiler, Builder, XMLValidator
+    DCCompiler, IECompiler, Builder
 )
 
 
@@ -35,15 +36,15 @@ class BuildView(services.OrchestratedView):
         self.ie_compiler = IECompiler()
         self.builder = Builder()
         if self.config.VALIDATION_ROSETTA_METS_ACTIVE:
-            self.rosetta_mets_validator = self.make_validator()
-            if self.rosetta_mets_validator.schema is None:
+            self.rosetta_mets_validator, error_msg = self.make_validator()
+            if self.rosetta_mets_validator is None:
                 raise RuntimeError(
                     "Unable to initialize Rosetta METS-validator from "
                     + f"""'{
                             self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK
                             or self.config.VALIDATION_ROSETTA_METS_XSD
                         }': """
-                    + f"{self.rosetta_mets_validator.log[Context.ERROR][0].body} "
+                    + f"{error_msg} "
                     + "Consider disabling option 'VALIDATION_ROSETTA_METS_ACTIVE'"
                     + (
                         " or setting 'VALIDATION_ROSETTA_METS_XSD_FALLBACK'"
@@ -55,20 +56,20 @@ class BuildView(services.OrchestratedView):
         else:
             self.rosetta_mets_validator = None
         if self.config.VALIDATION_DCXML_ACTIVE:
-            self.dcxml_validator = XMLValidator(
-                self.config.VALIDATION_DCXML_XSD,
-                version=self.config.VALIDATION_DCXML_XML_SCHEMA_VERSION,
-                schema_name=self.config.VALIDATION_DCXML_NAME
-            )
-            if self.dcxml_validator.schema is None:
+            try:
+                self.dcxml_validator = XMLValidator(
+                    self.config.VALIDATION_DCXML_XSD,
+                    version=self.config.VALIDATION_DCXML_XML_SCHEMA_VERSION,
+                    schema_name=self.config.VALIDATION_DCXML_NAME
+                )
+            except ValueError as exc_info:
                 raise RuntimeError(
                     "Unable to initialize dc.xml-validator from "
                     + f"""'{
                             self.config.VALIDATION_DCXML_XSD
                         }': """
-                    + f"{self.dcxml_validator.log[Context.ERROR][0].body} "
                     + "Consider disabling option 'VALIDATION_DCXML_ACTIVE'."
-                )
+                ) from exc_info
         else:
             self.dcxml_validator = None
 
@@ -197,7 +198,7 @@ class BuildView(services.OrchestratedView):
             push()
 
             report.log.merge(
-                validator.validate(target, xml_name=target_name)
+                validator.validate(target, xml_name=target_name).log
             )
             push()
 
@@ -215,32 +216,40 @@ class BuildView(services.OrchestratedView):
         report.log.merge(self.builder.log)
         push()
 
-    def make_validator(self) -> XMLValidator:
+    def make_validator(self) -> tuple[Optional[XMLValidator], str]:
         """
-        Returns `XMLValidator` instance based on `self.config`. If primary
-        source is unavailable, print warning and resort to secondary.
+        Returns a tuple of `XMLValidator` instance based on `self.config`
+        and message.
+
+        If primary source is unavailable,
+        print warning and resort to secondary.
         """
         # try loading primary schema
-        validator = XMLValidator(
-            self.config.VALIDATION_ROSETTA_METS_XSD,
-            version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION,
-            schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME
-        )
-        # check result
-        if self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK is not None \
-                and validator.schema is None:
-            # try fallback
-            print(
-                Context.WARNING.fancy.replace("WARNINGS", "WARNING")
-                + ": Unable to initialize Rosetta METS-validator from "
-                + f"'{self.config.VALIDATION_ROSETTA_METS_XSD}': "
-                + f"{validator.log[Context.ERROR][0].body}"
-                + " Trying to load fallback..",
-                file=sys.stderr
-            )
-            validator = XMLValidator(
-                self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK,
-                version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION_FALLBACK,
-                schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME_FALLBACK
-            )
-        return validator
+        try:
+            return XMLValidator(
+                self.config.VALIDATION_ROSETTA_METS_XSD,
+                version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION,
+                schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME
+            ), ""
+        except ValueError as exc_info:
+            if "Unable to load schema" in str(exc_info) and (
+                self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK is not None
+            ):
+                # try fallback
+                msg = (
+                    Context.WARNING.fancy.replace("WARNINGS", "WARNING")
+                    + ": Unable to initialize Rosetta METS-validator from "
+                    + f"'{self.config.VALIDATION_ROSETTA_METS_XSD}': "
+                    + f"{str(exc_info)} Trying to load fallback.."
+                )
+                print(msg, file=sys.stderr)
+                try:
+                    return XMLValidator(
+                        self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK,
+                        version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION_FALLBACK,
+                        schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME_FALLBACK
+                    ), msg
+                except ValueError as exc_info2:
+                    if "Unable to load schema" in str(exc_info2):
+                        pass
+            return None, str(exc_info)
