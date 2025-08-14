@@ -33,7 +33,9 @@ class BuildView(services.OrchestratedView):
 
         # initialize components
         self.dc_compiler = DCCompiler()
-        self.ie_compiler = IECompiler()
+        self.ie_compiler = IECompiler(
+            self.config.CUSTOM_FIXITY_SHA512_PLUGIN_NAME
+        )
         self.builder = Builder()
         if self.config.VALIDATION_ROSETTA_METS_ACTIVE:
             self.rosetta_mets_validator, error_msg = self.make_validator()

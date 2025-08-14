@@ -256,6 +256,12 @@ class IECompiler(MetadataCompiler):
     """
     `MetadataCompiler` that implements the aggregation of metadata from
     an `IP` and maps to the Rosetta METS `ie.xml`.
+
+    Keyword arguments:
+    custom_fixity_sha512_plugin_name -- text to set in key 'pluginName'
+                                        for the SHA512 manifest values
+                                        in the amdSec-File section
+                                        (default None)
     """
     TAG = "ie.xml Compiler"
     BAG_INFO_DC_MAP = {
@@ -275,6 +281,15 @@ class IECompiler(MetadataCompiler):
         XMLNS.dcterms + "license", XMLNS.dcterms + "accessRights",
         XMLNS.dcterms + "available", XMLNS.dcterms + "rightsHolder",
     ]
+
+    def __init__(
+        self,
+        custom_fixity_sha512_plugin_name: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self._custom_fixity_sha512_plugin_name = (
+            custom_fixity_sha512_plugin_name
+        )
 
     @staticmethod
     def _get_dcm_dcterms_identifier(baginfo: dict) -> str:
@@ -715,10 +730,19 @@ class IECompiler(MetadataCompiler):
                 )
                 for fixity_type, checksum in file.checksums.items():
                     record = et.SubElement(section, "record")
-                    et.SubElement(record, "key", id="fixityType").text = \
+                    if (
+                        fixity_type == "SHA512" and
+                        self._custom_fixity_sha512_plugin_name is not None
+                    ):
+                        et.SubElement(record, "key", id="pluginName").text = (
+                            self._custom_fixity_sha512_plugin_name
+                        )
+                    et.SubElement(record, "key", id="fixityType").text = (
                         fixity_type
-                    et.SubElement(record, "key", id="fixityValue").text = \
+                    )
+                    et.SubElement(record, "key", id="fixityValue").text = (
                         checksum
+                    )
 
                 # assemble amdSec element
                 amdsec = et.Element(

@@ -63,7 +63,7 @@ def test_build_validation_active(
     # setup
     testing_config.VALIDATION_ROSETTA_METS_ACTIVE = iexml_active
     testing_config.VALIDATION_DCXML_ACTIVE = dcxml_active
-    client = app_factory(testing_config()).test_client()
+    client = app_factory(testing_config(), block=True).test_client()
 
     # submit job and wait until job is completed
     response = client.post(

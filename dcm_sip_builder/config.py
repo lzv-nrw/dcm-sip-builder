@@ -18,6 +18,9 @@ class AppConfig(FSConfig, OrchestratedAppConfig):
 
     # ------ BUILD ------
     SIP_OUTPUT = Path(os.environ.get("SIP_OUTPUT") or "sip")
+    CUSTOM_FIXITY_SHA512_PLUGIN_NAME = (
+        os.environ.get("CUSTOM_FIXITY_SHA512_PLUGIN_NAME")
+    )
 
     # ------ VALIDATION ------
     # Rosetta METS

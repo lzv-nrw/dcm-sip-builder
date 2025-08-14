@@ -665,16 +665,26 @@ def test_ie_compiler_compile_rep_amdsecs_multiple(ie_compiler):
         assert utype.text == rep.usage_type
 
 
-def test_ie_compiler_compile_file_amdsecs(ie_compiler):
+def test_ie_compiler_compile_file_amdsecs(testing_config):
     """Test method `compile_file_amdsecs` of `IECompiler`."""
     representations = [
         Representation(
-            0, "type", "usage", files=[
-                File(5, "href", "loctype", {"METHOD": "value"})
-            ]
+            0,
+            "type",
+            "usage",
+            files=[
+                File(
+                    5,
+                    "href",
+                    "loctype",
+                    {"METHOD": "value", "SHA512": "SHA512-value"},
+                )
+            ],
         )
     ]
-    xml = ie_compiler.compile_file_amdsecs(representations)[0]
+    xml = IECompiler(
+        testing_config.CUSTOM_FIXITY_SHA512_PLUGIN_NAME
+    ).compile_file_amdsecs(representations)[0]
     assert xml.tag == XMLNS.mets + "amdSec"
     assert xml.attrib == {  # amdSec
         "ID": f"fid{representations[0].index}-{representations[0].files[0].index}-amd"
@@ -695,13 +705,40 @@ def test_ie_compiler_compile_file_amdsecs(ie_compiler):
     records = get_child_from_path(
         section, ["record"]
     )
-    assert len(records) == 1
-    keys = records[0]
-    assert len(keys) == 2
-    ftype = keys[0] if keys[0].attrib["id"] == "fixityType" else keys[1]
-    fvalue = keys[0] if keys[0].attrib["id"] == "fixityValue" else keys[1]
-    assert ftype.text == list(representations[0].files[0].checksums.keys())[0]
-    assert fvalue.text == list(representations[0].files[0].checksums.values())[0]
+    assert len(records) == 2
+
+    # explicitly check record/element 0
+    assert len(records[0]) == 2
+    # explicitly check record/element 1
+    # (contains the additional 'pluginName' key)
+    keys1 = records[1]
+    assert len(keys1) == 3
+    plugin_name = keys1[
+        [keys1[i].attrib["id"] for i in range(0, len(keys1))].index(
+            "pluginName"
+        )
+    ]
+    assert plugin_name.text == testing_config.CUSTOM_FIXITY_SHA512_PLUGIN_NAME
+    # for both records
+    for record_id, keys in enumerate(records):
+        ftype = keys[
+            [keys[i].attrib["id"] for i in range(0, len(keys))].index(
+                "fixityType"
+            )
+        ]
+        fvalue = keys[
+            [keys[i].attrib["id"] for i in range(0, len(keys))].index(
+                "fixityValue"
+            )
+        ]
+        assert (
+            ftype.text
+            == list(representations[0].files[0].checksums.keys())[record_id]
+        )
+        assert (
+            fvalue.text
+            == list(representations[0].files[0].checksums.values())[record_id]
+        )
 
 
 def test_ie_compiler_compile_file_amdsecs_empty_checksums(ie_compiler):

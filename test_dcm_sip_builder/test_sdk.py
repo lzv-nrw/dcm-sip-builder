@@ -43,7 +43,7 @@ def test_default_ping(
 ):
     """Test default endpoint `/ping-GET`."""
 
-    run_service(app)
+    run_service(app, probing_path="ready")
 
     response = default_sdk.ping()
 
@@ -55,7 +55,7 @@ def test_default_status(
 ):
     """Test default endpoint `/status-GET`."""
 
-    run_service(app)
+    run_service(app, probing_path="ready")
 
     response = default_sdk.get_status()
 
@@ -68,7 +68,7 @@ def test_default_identify(
 ):
     """Test default endpoint `/identify-GET`."""
 
-    run_service(app)
+    run_service(app, probing_path="ready")
 
     response = default_sdk.identify()
 
@@ -80,7 +80,7 @@ def test_build_report(
 ):
     """Test endpoints `/build-POST` and `/report-GET`."""
 
-    run_service(app)
+    run_service(app, probing_path="ready")
 
     submission = build_sdk.build(
         {
@@ -108,7 +108,7 @@ def test_build_report_404(
 ):
     """Test build endpoint `/report-GET` without previous submission."""
 
-    run_service(app)
+    run_service(app, probing_path="ready")
 
     with pytest.raises(dcm_sip_builder_sdk.rest.ApiException) as exc_info:
         build_sdk.get_report(token="some-token")

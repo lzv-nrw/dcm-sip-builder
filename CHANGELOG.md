@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.0] - 2025-08-14
+
+### Changed
+
+- migrated to new extension system
+
+### Added
+
+- added key `pluginName` to the fixity section in `ie.xml` for SHA-512 fixity type, with text controlled via an environment variable
+
 ## [2.1.0] - 2025-07-25
 
 ### Changed

@@ -66,6 +66,8 @@ Service-specific environment variables are
 
 ### Build
 * `SIP_OUTPUT` [DEFAULT "sip/"] output directory for building SIPs (relative to `FS_MOUNT_POINT`)
+* `CUSTOM_FIXITY_SHA512_PLUGIN_NAME` [DEFAULT null] if defined, set
+as text for the key `pluginName` in the amdSec-File section of the generated Rosetta METS-`ie.xml`
 
 ### Validation
 #### Rosetta METS
