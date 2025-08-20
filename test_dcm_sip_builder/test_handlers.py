@@ -60,6 +60,27 @@ def _build_handler(fixtures):
             },
             Responses.GOOD.status
         ),
+        (
+            {
+                "build": {"target": {"path": "test_ip"}},
+                "token": "https://lzv.nrw/callback"
+            },
+            422
+        ),
+        (
+            {
+                "build": {"target": {"path": "test_ip"}},
+                "token": "non-uuid"
+            },
+            422
+        ),
+        (
+            {
+                "build": {"target": {"path": "test_ip"}},
+                "token": "37ee72d6-80ab-4dcd-a68d-f8d32766c80d"
+            },
+            Responses.GOOD.status
+        ),
     ]),
     ids=[f"stage {i+1}" for i in range(len(pytest_args))]
 )
