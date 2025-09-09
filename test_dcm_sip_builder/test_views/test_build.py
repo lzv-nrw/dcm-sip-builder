@@ -1,7 +1,7 @@
 """Test-module for build-endpoint."""
 
-from unittest.mock import patch
-from pathlib import Path
+from uuid import uuid4
+from shutil import copytree
 
 import pytest
 
@@ -12,68 +12,63 @@ from dcm_sip_builder import app_factory
 def _minimal_request_body():
     return {
         "build": {
-            "target": {
-                "path": str("test_ip")
-            },
+            "target": {"path": str("test_ip")},
         },
     }
 
 
-def test_build_minimal(
-    client, minimal_request_body, testing_config, wait_for_report
-):
+def test_build_minimal(minimal_request_body, testing_config):
     """Test basic functionality of /build-POST endpoint."""
 
+    app = app_factory(testing_config())
+    client = app.test_client()
+
     # submit job
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    response = client.post("/build", json=minimal_request_body)
 
     assert response.status_code == 201
     assert response.mimetype == "application/json"
     token = response.json["value"]
 
     # wait until job is completed
-    json = wait_for_report(client, token)
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    json = client.get(f"/report?token={token}").json
 
     assert (testing_config.FS_MOUNT_POINT / json["data"]["path"]).is_dir()
     assert json["data"]["success"]
 
 
 @pytest.mark.parametrize(
-    "dcxml_active",
-    [True, False],
-    ids=["dcxml_active", "dcxml_inactive"]
+    "dcxml_active", [True, False], ids=["dcxml_active", "dcxml_inactive"]
 )
 @pytest.mark.parametrize(
-    "iexml_active",
-    [True, False],
-    ids=["iexml_active", "iexml_inactive"]
+    "iexml_active", [True, False], ids=["iexml_active", "iexml_inactive"]
 )
 def test_build_validation_active(
-    testing_config, minimal_request_body, wait_for_report,
-    iexml_active, dcxml_active,
+    testing_config,
+    minimal_request_body,
+    iexml_active,
+    dcxml_active,
 ):
     """
     Test performing /build-POST with and without validation
     """
 
     # setup
-    testing_config.VALIDATION_ROSETTA_METS_ACTIVE = iexml_active
-    testing_config.VALIDATION_DCXML_ACTIVE = dcxml_active
-    client = app_factory(testing_config(), block=True).test_client()
+    class ThisConfig(testing_config):
+        VALIDATION_ROSETTA_METS_ACTIVE = iexml_active
+        VALIDATION_DCXML_ACTIVE = dcxml_active
+
+    app = app_factory(ThisConfig())
+    client = app.test_client()
 
     # submit job and wait until job is completed
-    response = client.post(
-        "/build",
-        json=minimal_request_body
-    )
-    assert client.put("/orchestration?until-idle", json={}).status_code == 200
-
+    response = client.post("/build", json=minimal_request_body)
     assert response.status_code == 201
-    json = wait_for_report(client, response.json["value"])
+
+    # wait until job is completed
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    json = client.get(f"/report?token={response.json['value']}").json
 
     log = str(json["log"])
     assert (testing_config.VALIDATION_ROSETTA_XSD_NAME in log) == iexml_active
@@ -81,48 +76,41 @@ def test_build_validation_active(
 
 
 def test_build_error_in_compiler(
-    client, minimal_request_body, testing_config, wait_for_report
+    minimal_request_body, testing_config, fixtures, file_storage
 ):
     """Test whether build is executed despite error in compiler."""
 
-    class _IP:
-        baginfo = {
-            "Source-Organization": "source",
-            "Origin-System-Identifier": "origin",
-            # "External-Identifier": "external",
-            "DC-Title": "title"
-        }
-        path = Path(minimal_request_body["build"]["target"]["path"])
-        source_metadata = None
-        dc_xml = None
-        significant_properties = None
-        payload_files = {}
-        manifests = {}
+    app = app_factory(testing_config())
+    client = app.test_client()
 
-    with patch(
-        "dcm_sip_builder.views.build.IP",
-        return_value=_IP
-    ):
-        # submit job
-        token = client.post(
-            "/build",
-            json=minimal_request_body
-        ).json["value"]
-        assert client.put("/orchestration?until-idle", json={}).status_code == 200
+    # create fake ip with missing required metadata
+    path = file_storage / str(uuid4())
+    copytree(fixtures / "test_ip", path)
+    (path / "bag-info.txt").write_text(
+        "",
+        encoding="utf-8",
+    )
 
-        # wait until job is completed
-        json = wait_for_report(client, token)
+    minimal_request_body["build"]["target"]["path"] = str(
+        path.relative_to(file_storage)
+    )
+    # submit job
+    token = client.post("/build", json=minimal_request_body).json["value"]
 
-        # error occurred
-        assert any(
-            "External-Identifier" in msg["body"]
-            and "ie.xml Compiler" in msg["origin"]
-            for msg in json["log"]["ERROR"]
-        )
+    # wait until job is completed
+    app.extensions["orchestra"].stop(stop_on_idle=True)
+    json = client.get(f"/report?token={token}").json
 
-        # sip exists
-        sip = testing_config.FS_MOUNT_POINT / json["data"]["path"]
-        assert sip.is_dir()
-        assert (sip / "dc.xml").is_file()
-        assert (sip / "content" / "ie.xml").is_file()
-        assert (sip / "content" / "streams").is_dir()
+    # error occurred
+    assert any(
+        "Source-Organization" in msg["body"]
+        and "ie.xml Compiler" in msg["origin"]
+        for msg in json["log"]["ERROR"]
+    )
+
+    # sip exists
+    sip = testing_config.FS_MOUNT_POINT / json["data"]["path"]
+    assert sip.is_dir()
+    assert (sip / "dc.xml").is_file()
+    assert (sip / "content" / "ie.xml").is_file()
+    assert (sip / "content" / "streams").is_dir()

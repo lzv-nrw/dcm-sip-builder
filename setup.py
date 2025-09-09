@@ -1,7 +1,8 @@
 from setuptools import setup
 
+
 setup(
-    version="2.4.0",
+    version="3.0.0",
     name="dcm-sip-builder",
     description="flask app implementing the DCM SIP Builder API",
     author="LZV.nrw",
@@ -12,8 +13,8 @@ setup(
         "lxml==5.*",
         "PyYAML==6.*",
         "data-plumber-http>=1.0.0,<2",
-        "dcm-common[services, db, orchestration, xml]>=3.28.0,<4",
-        "dcm-sip-builder-api>=2.1.0,<3",
+        "dcm-common[services, orchestra, xml]>=4.0.0,<5",
+        "dcm-sip-builder-api>=3.0.0,<4",
     ],
     packages=[
         "dcm_sip_builder",

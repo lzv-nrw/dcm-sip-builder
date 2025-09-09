@@ -1,2 +1,2 @@
 pytest>=7.4.3,<8
-dcm-sip-builder-sdk>=2.1.0,<3
+dcm-sip-builder-sdk>=3.0.0,<4

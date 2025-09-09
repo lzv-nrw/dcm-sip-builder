@@ -7,6 +7,15 @@ import pytest
 from dcm_sip_builder import app_factory
 
 
+@pytest.fixture(name="testing_config")
+def _testing_config(testing_config):
+    """Returns test-config"""
+    class TestingConfig(testing_config):
+        ORCHESTRA_AT_STARTUP = False
+
+    return TestingConfig
+
+
 def test_iexml_error_on_missing_xsd(testing_config):
     """Test whether a missing XML schema causes `RuntimeError`."""
     testing_config.VALIDATION_ROSETTA_METS_XSD = \

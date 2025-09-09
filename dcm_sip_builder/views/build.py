@@ -4,21 +4,21 @@ Build View-class definition
 
 from typing import Optional
 import sys
+import os
+from uuid import uuid4
 
-from flask import Blueprint, jsonify, Response
+from flask import Blueprint, jsonify, Response, request
 from data_plumber_http.decorators import flask_handler, flask_args, flask_json
 from dcm_common import LoggingContext as Context
 from dcm_common.util import get_output_path
-from dcm_common.orchestration import JobConfig, Job
+from dcm_common.orchestra import JobConfig, JobContext, JobInfo
 from dcm_common import services
 from dcm_common.xml import XMLValidator
 
 from dcm_sip_builder.config import AppConfig
 from dcm_sip_builder.handlers import get_build_handler
-from dcm_sip_builder.models import BuildConfig, IP, SIP
-from dcm_sip_builder.components import (
-    DCCompiler, IECompiler, Builder
-)
+from dcm_sip_builder.models import BuildConfig, IP, SIP, Report
+from dcm_sip_builder.components import DCCompiler, IECompiler, Builder
 
 
 class BuildView(services.OrchestratedView):
@@ -26,9 +26,7 @@ class BuildView(services.OrchestratedView):
 
     NAME = "sip-build"
 
-    def __init__(
-        self, config: AppConfig, *args, **kwargs
-    ) -> None:
+    def __init__(self, config: AppConfig, *args, **kwargs) -> None:
         super().__init__(config, *args, **kwargs)
 
         # initialize components
@@ -50,7 +48,8 @@ class BuildView(services.OrchestratedView):
                     + "Consider disabling option 'VALIDATION_ROSETTA_METS_ACTIVE'"
                     + (
                         " or setting 'VALIDATION_ROSETTA_METS_XSD_FALLBACK'"
-                        if self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK is None
+                        if self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK
+                        is None
                         else ""
                     )
                     + "."
@@ -62,7 +61,7 @@ class BuildView(services.OrchestratedView):
                 self.dcxml_validator = XMLValidator(
                     self.config.VALIDATION_DCXML_XSD,
                     version=self.config.VALIDATION_DCXML_XML_SCHEMA_VERSION,
-                    schema_name=self.config.VALIDATION_DCXML_NAME
+                    schema_name=self.config.VALIDATION_DCXML_NAME,
                 )
             except ValueError as exc_info:
                 raise RuntimeError(
@@ -74,6 +73,11 @@ class BuildView(services.OrchestratedView):
                 ) from exc_info
         else:
             self.dcxml_validator = None
+
+    def register_job_types(self):
+        self.config.worker_pool.register_job_type(
+            self.NAME, self.build, Report
+        )
 
     def configure_bp(self, bp: Blueprint, *args, **kwargs) -> None:
         @bp.route("/build", methods=["POST"])
@@ -88,145 +92,140 @@ class BuildView(services.OrchestratedView):
         def build(
             build: BuildConfig,
             token: Optional[str] = None,
-            callback_url: Optional[str] = None
+            callback_url: Optional[str] = None,
         ):
             """Submit IP for SIP building."""
             try:
-                token = self.orchestrator.submit(
-                    JobConfig(
-                        request_body={
-                            "build": build.json,
-                            "callback_url": callback_url
-                        },
-                        context=self.NAME
+                token = self.config.controller.queue_push(
+                    token or str(uuid4()),
+                    JobInfo(
+                        JobConfig(
+                            self.NAME,
+                            original_body=request.json,
+                            request_body={
+                                "build": build.json,
+                                "callback_url": callback_url,
+                            },
+                        ),
+                        report=Report(
+                            host=request.host_url, args=request.json
+                        ),
                     ),
-                    token=token,
                 )
-            except ValueError as exc_info:
+            # pylint: disable=broad-exception-caught
+            except Exception as exc_info:
                 return Response(
                     f"Submission rejected: {exc_info}",
                     mimetype="text/plain",
-                    status=400,
+                    status=500,
                 )
 
             return jsonify(token.json), 201
 
         self._register_abort_job(bp, "/build")
 
-    def get_job(self, config: JobConfig) -> Job:
-        return Job(
-            cmd=lambda push, data: self.build(
-                push, data, BuildConfig.from_json(
-                    config.request_body["build"]
-                )
-            ),
-            hooks={
-                "startup": services.default_startup_hook,
-                "success": services.default_success_hook,
-                "fail": services.default_fail_hook,
-                "abort": services.default_abort_hook,
-                "completion": services.termination_callback_hook_factory(
-                    config.request_body.get("callback_url", None),
-                )
-            },
-            name="SIP Builder"
-        )
-
-    def build(
-        self, push, report, build_config: BuildConfig,
-    ):
-        """
-        Job instructions for the '/build' endpoint.
-
-        Orchestration standard-arguments:
-        push -- (orchestration-standard) push `report` to host process
-        report -- (orchestration-standard) common report-object shared
-                  via `push`
-
-        Keyword arguments:
-        build_config -- a `BuildConfig`-config
-        """
+    def build(self, context: JobContext, info: JobInfo):
+        """Job instructions for the '/prepare' endpoint."""
+        os.chdir(self.config.FS_MOUNT_POINT)
+        build_config = BuildConfig.from_json(info.config.request_body["build"])
+        info.report.log.set_default_origin("SIP Builder")
 
         # set progress info
-        report.progress.verbose = "preparing output destination"
-        push()
+        info.report.progress.verbose = "preparing output destination"
+        context.push()
 
         # find valid SIP-output path
-        report.data.path = get_output_path(
-            self.config.SIP_OUTPUT
-        )
-        push()
-        if report.data.path is None:
-            report.data.success = False
-            report.log.log(
+        info.report.data.path = get_output_path(self.config.SIP_OUTPUT)
+        context.push()
+        if info.report.data.path is None:
+            info.report.data.success = False
+            info.report.log.log(
                 Context.ERROR,
                 body="Unable to generate output directory in "
                 + f"'{self.config.FS_MOUNT_POINT / self.config.SIP_OUTPUT}'"
-                + "(maximum retries exceeded)."
+                + "(maximum retries exceeded).",
             )
-            push()
+            context.push()
+
+            # make callback; rely on _run_callback to push progress-update
+            info.report.progress.complete()
+            self._run_callback(
+                context, info, info.config.request_body.get("callback_url")
+            )
             return
 
         # set progress info
-        report.progress.verbose = (
+        info.report.progress.verbose = (
             f"reading IP '{build_config.target.path}'"
         )
-        push()
+        context.push()
 
         ip = IP(build_config.target.path)
 
         # set progress info
-        report.progress.verbose = (
+        info.report.progress.verbose = (
             f"compiling SIP metadata from IP '{build_config.target.path}'"
         )
-        push()
+        context.push()
 
         # compile metadata
         dc = self.dc_compiler.compile_as_string(ip)
-        report.log.merge(self.dc_compiler.log)
-        push()
+        info.report.log.merge(self.dc_compiler.log)
+        context.push()
         ie = self.ie_compiler.compile_as_string(ip)
-        report.log.merge(self.ie_compiler.log)
-        push()
+        info.report.log.merge(self.ie_compiler.log)
+        context.push()
 
         # validation
         for validator, target, target_name, active in [
             (
-                self.rosetta_mets_validator, ie, "ie.xml",
-                self.config.VALIDATION_ROSETTA_METS_ACTIVE
+                self.rosetta_mets_validator,
+                ie,
+                "ie.xml",
+                self.config.VALIDATION_ROSETTA_METS_ACTIVE,
             ),
             (
-                self.dcxml_validator, dc, "dc.xml",
-                self.config.VALIDATION_DCXML_ACTIVE
+                self.dcxml_validator,
+                dc,
+                "dc.xml",
+                self.config.VALIDATION_DCXML_ACTIVE,
             ),
         ]:
             if not active:
                 continue
             # set progress info
-            report.progress.verbose = (
+            info.report.progress.verbose = (
                 f"validating '{target_name}' of "
-                + f"SIP '{report.data.path}'"
+                + f"SIP '{info.report.data.path}'"
             )
-            push()
+            context.push()
 
-            report.log.merge(
+            info.report.log.merge(
                 validator.validate(target, xml_name=target_name).log
             )
-            push()
+            context.push()
 
         # set progress info
-        report.progress.verbose = (
-            f"building SIP '{report.data.path}'"
+        info.report.progress.verbose = (
+            f"building SIP '{info.report.data.path}'"
         )
-        push()
+        context.push()
 
         # build SIP
-        report.data.success = all([
-            Context.ERROR not in report.log,
-            self.builder.build(ip, ie, dc, SIP(report.data.path))
-        ])
-        report.log.merge(self.builder.log)
-        push()
+        info.report.data.success = all(
+            [
+                Context.ERROR not in info.report.log,
+                self.builder.build(ip, ie, dc, SIP(info.report.data.path)),
+            ]
+        )
+        info.report.log.merge(self.builder.log)
+        context.push()
+
+        # make callback; rely on _run_callback to push progress-update
+        info.report.progress.complete()
+        self._run_callback(
+            context, info, info.config.request_body.get("callback_url")
+        )
 
     def make_validator(self) -> tuple[Optional[XMLValidator], str]:
         """
@@ -238,11 +237,14 @@ class BuildView(services.OrchestratedView):
         """
         # try loading primary schema
         try:
-            return XMLValidator(
-                self.config.VALIDATION_ROSETTA_METS_XSD,
-                version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION,
-                schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME
-            ), ""
+            return (
+                XMLValidator(
+                    self.config.VALIDATION_ROSETTA_METS_XSD,
+                    version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION,
+                    schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME,
+                ),
+                "",
+            )
         except ValueError as exc_info:
             if "Unable to load schema" in str(exc_info) and (
                 self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK is not None
@@ -256,11 +258,14 @@ class BuildView(services.OrchestratedView):
                 )
                 print(msg, file=sys.stderr)
                 try:
-                    return XMLValidator(
-                        self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK,
-                        version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION_FALLBACK,
-                        schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME_FALLBACK
-                    ), msg
+                    return (
+                        XMLValidator(
+                            self.config.VALIDATION_ROSETTA_METS_XSD_FALLBACK,
+                            version=self.config.VALIDATION_ROSETTA_METS_XML_SCHEMA_VERSION_FALLBACK,
+                            schema_name=self.config.VALIDATION_ROSETTA_XSD_NAME_FALLBACK,
+                        ),
+                        msg,
+                    )
                 except ValueError as exc_info2:
                     if "Unable to load schema" in str(exc_info2):
                         pass
